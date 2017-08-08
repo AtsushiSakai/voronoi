@@ -6,7 +6,6 @@ VERSION
     0.1                 - Initial version
 
  */
-
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h> // printf
@@ -156,6 +155,7 @@ static void Usage()
 	printf("\t-o <outputfile.png>\n");
 	printf("\t-w <width>\n");
 	printf("\t-h <height>\n");
+    printf("\t--nowrite\t\tDisables writing a texture (for testing)\n");
 }
 
 // Search for any of the common characters: \n,; 
@@ -173,6 +173,23 @@ static inline int is_csv(const char* chars, uint32_t len)
 static int debug_skip_point(const jcv_point* pt)
 {
 	(void)pt;
+
+	// float dx = pt->x - 1174.719849f;
+	// float dy = pt->y - 0.394610f;
+	// float lensq = dx*dx + dy*dy;
+
+	// float dist = 350;
+	// if( lensq > (dist*dist) )
+	// 	return 1;
+	
+
+	//if(pt->x < 1000 || pt->x > 1400 )
+	// 	return 1;
+
+	if(pt->y < 0 || pt->y > 0.45f )
+		return 1;
+
+	printf("pt: %f, %f\n", pt->x, pt->y);
 	return 0;
 }
 
@@ -205,6 +222,7 @@ static int read_input(const char* path, jcv_point** points, uint32_t* length)
 	char* buffer = (char*)alloca(buffersize);
 	uint32_t bufferoffset = 0;
 
+	int32_t numskipped = 0;
     while( !feof(file) )
     {
         size_t num_read = fread((void*)&buffer[bufferoffset], 1, buffersize - bufferoffset, file);
@@ -228,6 +246,7 @@ static int read_input(const char* path, jcv_point** points, uint32_t* length)
         		jcv_point* pt = &((jcv_point*)buffer)[i];
         		if( debug_skip_point(pt) )
         		{
+        			++numskipped;
         			continue;
         		}
         		pts[len].x = pt->x;
@@ -242,9 +261,9 @@ static int read_input(const char* path, jcv_point** points, uint32_t* length)
         	char* p = buffer;
         	char* end = &buffer[num_read];
 
+        	char* r = p;
         	while( p < end )
         	{
-        		char* r = p;
         		int end_of_line = 0;
 	        	while( r < end )
 	        	{
@@ -274,15 +293,23 @@ static int read_input(const char* path, jcv_point** points, uint32_t* length)
 	        		++r;
 	        	}
 
+	        	if( !end_of_line && feof(file) )
+	        	{
+	        		*r = 0;
+	        		end_of_line = 1;
+	        	}
+
 	        	if( end_of_line )
 	        	{
 		        	jcv_point pt;
-	        		int numscanned = sscanf(p, "%f %f\n", &pt.x, &pt.y);
+	        		int numscanned = sscanf(p, "%f %f", &pt.x, &pt.y);
 
 	        		if( numscanned == 2 )
 	        		{
 	        			if( debug_skip_point(&pt) )
 		        		{
+        					++numskipped;
+			        		p = r;
 		        			continue;
 		        		}
 			        	if( capacity < (len + 1))
@@ -304,15 +331,15 @@ static int read_input(const char* path, jcv_point** points, uint32_t* length)
 				}
 				else
 				{
-		        	bufferoffset = (uint32_t)(uintptr_t) (r - p);
-		        	memmove(buffer, p, bufferoffset);
 		        	break;
 				}
         	}
+        	bufferoffset = (uint32_t)(uintptr_t) (r - p);
+        	memmove(buffer, p, bufferoffset);
         }
     }
 
-	printf("Read %d points from %s\n", len, path);
+	printf("Read %d points from %s (skipped %d)\n", len, path, numskipped);
 
 	if( strcmp(path, "-") != 0 )
     	fclose(file);
@@ -341,6 +368,7 @@ int main(int argc, const char** argv)
 	int height = 512;
 	int numrelaxations = 0;
 	int mode = 0;
+    int nowrite = 0;
 	const char* inputfile = 0;
 	const char* outputfile = "example.png";
 
@@ -422,6 +450,10 @@ int main(int argc, const char** argv)
 				return 1;
 			}
 		}
+        else if(strcmp(argv[i], "--nowrite") == 0)
+        {
+            nowrite = 1;
+        }
 		else if(strcmp(argv[i], "-?") == 0 || strcmp(argv[i], "--help") == 0)
 		{
 			Usage();
@@ -459,7 +491,8 @@ int main(int argc, const char** argv)
 	printf("Width/Height is %d, %d\n", width, height);
 	printf("Count is %d, num relaxations is %d\n", count, numrelaxations);
 
-	jcv_rect* rect = 0;
+	jcv_rect _rect = { {0, 0}, {width, height}};
+	jcv_rect* rect = &_rect;
 
 	for( int i = 0; i < numrelaxations; ++i )
 	{
@@ -472,20 +505,26 @@ int main(int argc, const char** argv)
 		jcv_diagram_free( &diagram );
 	}
 
-	size_t imagesize = (size_t)(width*height*3);
-	unsigned char* image = (unsigned char*)malloc(imagesize);
-	memset(image, 0, imagesize);
-
-	unsigned char color_pt[] = {255, 255, 255};
-	unsigned char color_line[] = {220, 220, 220};
-
 	jcv_diagram diagram;
 	jcv_point dimensions;
 	dimensions.x = (jcv_real)width;
 	dimensions.y = (jcv_real)height;
-	{
-		memset(&diagram, 0, sizeof(jcv_diagram));
-		jcv_diagram_generate(count, (const jcv_point*)points, rect, &diagram);
+
+    memset(&diagram, 0, sizeof(jcv_diagram));
+    jcv_diagram_generate(count, (const jcv_point*)points, rect, &diagram);
+
+	printf("Generation done.\n");
+    
+    if( !nowrite )
+    {
+		printf("Rendering\n");
+
+		size_t imagesize = (size_t)(width*height*3);
+		unsigned char* image = (unsigned char*)malloc(imagesize);
+		memset(image, 0, imagesize);
+
+		unsigned char color_pt[] = {255, 255, 255};
+		unsigned char color_line[] = {220, 220, 220};
 
 		// If you want to draw triangles, or relax the diagram,
 		// you can iterate over the sites and get all edges easily
@@ -525,34 +564,35 @@ int main(int argc, const char** argv)
 			edge = edge->next;
 		}
 
-		jcv_diagram_free( &diagram );
-	}
+    	// Plot the sites
+    	for( int i = 0; i < count; ++i )
+    	{
+    		jcv_point p = remap(&points[i], &diagram.min, &diagram.max, &dimensions );
+    		plot((int)p.x, (int)p.y, image, width, height, 3, color_pt);
+    	}
 
-	// Plot the sites
-	for( int i = 0; i < count; ++i )
-	{
-		jcv_point p = remap(&points[i], &diagram.min, &diagram.max, &dimensions );
-		plot((int)p.x, (int)p.y, image, width, height, 3, color_pt);
-	}
+    	// flip image
+    	int stride = width*3;
+    	uint8_t* row = (uint8_t*)malloc((size_t)stride);
+    	for( int y = 0; y < height/2; ++y )
+    	{
+    		memcpy(row, &image[y*stride], (size_t)stride);
+    		memcpy(&image[y*stride], &image[(height-1-y)*stride], (size_t)stride);
+    		memcpy(&image[(height-1-y)*stride], row, (size_t)stride);
+    	}
 
-	free(points);
+    	char path[512];
+    	sprintf(path, "%s", outputfile);
+    	printf("Writing to %s\n", path);
+    	wrap_stbi_write_png(path, width, height, 3, image, stride);
+    	
+    	printf("Done\n");
 
-	// flip image
-	int stride = width*3;
-	uint8_t* row = (uint8_t*)malloc((size_t)stride);
-	for( int y = 0; y < height/2; ++y )
-	{
-		memcpy(row, &image[y*stride], (size_t)stride);
-		memcpy(&image[y*stride], &image[(height-1-y)*stride], (size_t)stride);
-		memcpy(&image[(height-1-y)*stride], row, (size_t)stride);
-	}
+	    free(image);
+    }
 
-	char path[512];
-	sprintf(path, "%s", outputfile);
-	wrap_stbi_write_png(path, width, height, 3, image, stride);
-	printf("wrote %s\n", path);
-
-	free(image);
+    jcv_diagram_free( &diagram );
+    free(points);
 
 	return 0;
 }

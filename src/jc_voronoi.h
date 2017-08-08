@@ -6,7 +6,8 @@ ABOUT:
 
 HISTORY:
 
-    0.3     2017-04-16	- Added clipping box as input argument (Automatically calcuated if needed)
+    0.3.1   2017-05-01  - Use of FLT_MIN for comparing the denominator in the half edge intersection
+    0.3     2017-04-16	- Added clipping box as input argument (Automatically calculated if needed)
                         - Input points are pruned based on bounding box
     0.2     2016-12-30  - Fixed issue of edges not being closed properly
                         - Fixed issue when having many events
@@ -146,6 +147,7 @@ USAGE:
 
 #include <math.h>
 #include <stddef.h>
+#include <float.h>
 
 #include <assert.h>
 
@@ -156,21 +158,26 @@ extern "C" {
 #ifndef JCV_REAL_TYPE
 	#define JCV_REAL_TYPE float
 #endif
-
 #ifndef JCV_ATAN2
 	#define JCV_ATAN2(_Y_, _X_)	atan2f(_Y_, _X_)
 #endif
-
 #ifndef JCV_SQRT
 	#define JCV_SQRT(_X_)		sqrtf(_X_)
 #endif
-
 #ifndef JCV_FABS
 	#define JCV_FABS(_X_)		fabsf(_X_)
 #endif
-
+#ifndef JCV_CEIL
+    #define JCV_CEIL(_X_)       ceilf(_X_)
+#endif
+#ifndef JCV_FLOOR
+    #define JCV_FLOOR(_X_)      floorf(_X_)
+#endif
 #ifndef JCV_PI
 	#define JCV_PI 3.14159265358979323846264338327950288f
+#endif
+#ifndef JCV_FLT_MIN
+    #define JCV_FLT_MIN FLT_MIN
 #endif
 
 typedef JCV_REAL_TYPE jcv_real;
@@ -781,14 +788,19 @@ static int jcv_halfedge_intersect(const jcv_halfedge* he1, const jcv_halfedge* h
 	jcv_real dx = e2->sites[1]->p.x - e1->sites[1]->p.x;
 	jcv_real dy = e2->sites[1]->p.y - e1->sites[1]->p.y;
 
+    printf("   e1:  s0: %f, %f  s1: %f, %f\n", e1->sites[0]->p.x, e1->sites[0]->p.y, e1->sites[1]->p.x, e1->sites[1]->p.y);
+    printf("   e2:  s0: %f, %f  s1: %f, %f\n", e2->sites[0]->p.x, e2->sites[0]->p.y, e2->sites[1]->p.x, e2->sites[1]->p.y);
+
 	if( dx == 0 && dy == 0 )
 	{
+        printf("%s %d  dx && dy == 0\n", __FUNCTION__, __LINE__);
 		return 0;
 	}
 
 	jcv_real d = e1->a * e2->b - e1->b * e2->a;
-	if( JCV_FABS(d) < (jcv_real)0.00001f )
+	if( JCV_FABS(d) < JCV_FLT_MIN )
 	{
+        printf("   %s %d  d: %f\n", __FUNCTION__, __LINE__, d);
 		return 0;
 	}
 	out->x = (e1->c * e2->b - e1->b * e2->c) / d;
@@ -810,6 +822,7 @@ static int jcv_halfedge_intersect(const jcv_halfedge* he1, const jcv_halfedge* h
 	int right_of_site = out->x >= e->sites[1]->p.x;
 	if ((right_of_site && he->direction == JCV_DIRECTION_LEFT) || (!right_of_site && he->direction == JCV_DIRECTION_RIGHT))
 	{
+        printf("%s %d  behind line  ros: %d\n", __FUNCTION__, __LINE__, right_of_site);
 		return 0;
 	}
 
@@ -926,6 +939,29 @@ static void jcv_pq_remove(jcv_priorityqueue* pq, const void* node)
 
 // internal functions
 
+static void debug_beachline(jcv_context_internal* internal)
+{
+    //return;
+    printf("beachline\n");
+    jcv_halfedge* he = internal->beachline_start;
+    while(he)
+    {
+        char* dir = (he == internal->beachline_start) ? "start" : (he == internal->beachline_end ? "end" : (he->direction == JCV_DIRECTION_LEFT ? "left":"right") );
+
+        //printf(" he:  p1: %f, %f  p2: %f, %f\n", he->edge->pos[0].x, he->edge->pos[0].y, he->edge->pos[1].x, he->edge->pos[1].x);
+        if (he->edge)
+        {
+            printf(" he: vtx: %f, %f  %f  %s   s1: %f, %f  s2: %f, %f\n", he->vertex.x, he->vertex.y, he->y, dir, he->edge->sites[0]->p.x, he->edge->sites[0]->p.y, he->edge->sites[1]->p.x, he->edge->pos[1].y );
+        }
+        else
+        {
+            printf(" he: vtx: %f, %f  %f %s\n", he->vertex.x, he->vertex.y, he->y, dir );   
+        }
+
+        he = he->right;
+    }
+}
+
 static inline jcv_site* jcv_nextsite(jcv_context_internal* internal)
 {
 	return (internal->currentsite < internal->numsites) ? &internal->sites[internal->currentsite++] : 0;
@@ -972,14 +1008,19 @@ static int jcv_check_circle_event(jcv_halfedge* he1, jcv_halfedge* he2, jcv_poin
 	jcv_edge* e2 = he2->edge;
 	if( e1 == 0 || e2 == 0 || e1->sites[1] == e2->sites[1] )
 	{
+        printf("jcv_check_circle_event  false  e1:s1 %p  e2:s1 %p\n", e1 ? e1->sites[1] : 0, e2 ? e2->sites[1] : 0);
 		return 0;
 	}
 
-	return jcv_halfedge_intersect(he1, he2, vertex);
+	int result = jcv_halfedge_intersect(he1, he2, vertex);
+    printf("jcv_check_circle_event  %s: %f, %f\n", result ? "true":"false", (float)vertex->x, (float)vertex->y);
+    return result;
 }
 
 static void jcv_site_event(jcv_context_internal* internal, jcv_site* site)
 {
+printf("jcv_site_event  %.20f, %.20f\n", (float)site->p.x, (float)site->p.y);
+
 	jcv_halfedge* left 	 = jcv_get_edge_above_x(internal, &site->p);
 	jcv_halfedge* right	 = left->right;
 	jcv_site*	  bottom = jcv_halfedge_rightsite(left);
@@ -1012,6 +1053,8 @@ static void jcv_site_event(jcv_context_internal* internal, jcv_site* site)
 		edge2->y		= p.y + jcv_point_dist(&site->p, &p);
 		jcv_pq_push(internal->eventqueue, edge2);
 	}
+
+    debug_beachline(internal);
 }
 
 static inline jcv_real jcv_determinant(const jcv_point* a, const jcv_point* b, const jcv_point* c)
@@ -1054,15 +1097,21 @@ static void jcv_sortedges_insert(jcv_site* site, jcv_graphedge* edge)
 
 static void jcv_finishline(jcv_context_internal* internal, jcv_edge* e)
 {
+printf("jcv_finishline %d\n", __LINE__);
 	if( !jcv_edge_clipline( e, &internal->min, &internal->max ) )
 		return;
 
+printf("jcv_finishline %d\n", __LINE__);
 	if( jcv_point_eq(&e->pos[0], &e->pos[1]) )
 		return;
+
+printf("jcv_finishline %d  s0: %f, %f  s1: %f, %f\n", __LINE__, e->sites[0]->p.x, e->sites[0]->p.y, e->sites[1]->p.x, e->sites[1]->p.y);
+printf("jcv_finishline %d    p0: %f, %f  p1: %f, %f\n", __LINE__, e->pos[0].x, e->pos[0].y, e->pos[1].x, e->pos[1].y);
 
 	// Make sure the graph edges are CCW
 	int flip = jcv_determinant(&e->sites[0]->p, &e->pos[0], &e->pos[1]) > (jcv_real)0 ? 0 : 1;
 
+printf("  flip: %d\n", flip);
 	for( int i = 0; i < 2; ++i )
 	{
         jcv_graphedge* ge = jcv_alloc_graphedge(internal);
@@ -1130,6 +1179,9 @@ static inline void jcv_create_corner_edge(jcv_context_internal* internal, const 
 // Since the algorithm leaves gaps at the borders/corner, we want to fill them
 static void jcv_fillgaps(jcv_diagram* diagram)
 {
+
+printf("jcv_fillgaps\n");
+
 	jcv_context_internal* internal = diagram->internal;
 	for( int i = 0; i < internal->numsites; ++i )
 	{
@@ -1139,8 +1191,10 @@ static void jcv_fillgaps(jcv_diagram* diagram)
 		jcv_graphedge* current = site->edges;
 		if( !current )
 		{
+printf("site: %f, %f\n", site->p.x, site->p.y);
+
 			// No edges, then it should be a single cell
-			assert( internal->numsites == 1 );
+			//assert( internal->numsites == 1 );
 
 			jcv_graphedge* gap = jcv_alloc_graphedge(diagram->internal);
 			gap->edge 		= 0; // not really true (should be 0)
@@ -1216,6 +1270,7 @@ static void jcv_fillgaps(jcv_diagram* diagram)
 
 static void jcv_circle_event(jcv_context_internal* internal)
 {
+printf("jcv_circle_event\n");
 	jcv_halfedge* left 		= (jcv_halfedge*)jcv_pq_pop(internal->eventqueue);
 
 	jcv_halfedge* leftleft 	= left->left;
@@ -1270,6 +1325,8 @@ static void jcv_circle_event(jcv_context_internal* internal)
 		he->y		 	= p.y + jcv_point_dist(&bottom->p, &p);
 		jcv_pq_push(internal->eventqueue, he);
 	}
+
+    debug_beachline(internal);
 }
 
 static inline void _jcv_calc_bounds(int num_points, const jcv_point* points, jcv_point* min, jcv_point* max)
@@ -1288,10 +1345,10 @@ static inline void _jcv_calc_bounds(int num_points, const jcv_point* points, jcv
 		else if( points[i].y > _max.y )
 			_max.y = points[i].y;
 	}
-	min->x = floorf(_min.x);
-	min->y = floorf(_min.y);
-	max->x = ceilf(_max.x);
-	max->y = ceilf(_max.y);
+	min->x = JCV_FLOOR(_min.x);
+	min->y = JCV_FLOOR(_min.y);
+	max->x = JCV_CEIL(_max.x);
+	max->y = JCV_CEIL(_max.y);
 }
 
 void jcv_diagram_generate( int num_points, const jcv_point* points, const jcv_rect* rect, jcv_diagram* d )
@@ -1337,6 +1394,8 @@ void jcv_diagram_generate_useralloc( int num_points, const jcv_point* points, co
 	internal->beachline_start->right 	= internal->beachline_end;
 	internal->beachline_end->left		= internal->beachline_start;
 	internal->beachline_end->right	= 0;
+
+debug_beachline(internal);
 
 	internal->last_inserted = 0;
 
@@ -1384,10 +1443,12 @@ void jcv_diagram_generate_useralloc( int num_points, const jcv_point* points, co
 				continue;
 			}
 		}
-		
+
+    printf("pt: %d  %f, %f\n", s->index, s->p.x, s->p.y);		
 		internal->sites[i - offset] = internal->sites[i];
 	}
 	num_points -= offset;
+
 
 	if( rect == 0 )
 	{
@@ -1441,6 +1502,9 @@ void jcv_diagram_generate_useralloc( int num_points, const jcv_point* points, co
 			finished = 1;
 		}
 	}
+
+printf("FINISING LINES\n");
+debug_beachline(internal);
 
 	for( jcv_halfedge* he = internal->beachline_start->right; he != internal->beachline_end; he = he->right )
 	{
