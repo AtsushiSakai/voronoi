@@ -26,7 +26,7 @@ int main(int argc, const char** argv)
     memset(&diagram, 0, sizeof(jcv_diagram));
     // assersion error
     // Assertion failed: (internal->numsites == 1), function jcv_fillgaps, file src/jc_voronoi.h, line 1143.
-    jcv_diagram_generate(count, points, 0, &diagram );
+    jcv_diagram_generate(count, points, 0, 0, &diagram );
     jcv_diagram_free( &diagram );
 
     return 0;
