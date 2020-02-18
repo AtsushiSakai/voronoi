@@ -1,10 +1,9 @@
+#!/usr/bin/env bash
 
-# VORONOIPPINC=voronoi++/source/voronoi/include
-# VORONOIPPSRC=voronoi++/source/voronoi/source
-# VORONOIPP="$VORONOIPPSRC/fortune/Arc.cpp $VORONOIPPSRC/fortune/BeachLine.cpp $VORONOIPPSRC/fortune/Event.cpp $VORONOIPPSRC/fortune/Fortune.cpp $VORONOIPPSRC/geometry/Circle.cpp $VORONOIPPSRC/geometry/ConvexPolygon.cpp $VORONOIPPSRC/geometry/Line.cpp $VORONOIPPSRC/geometry/Parabola.cpp $VORONOIPPSRC/geometry/Point.cpp $VORONOIPPSRC/geometry/Rectangle.cpp $VORONOIPPSRC/geometry/Vector.cpp $VORONOIPPSRC/VoronoiCell.cpp $VORONOIPPSRC/VoronoiDiagram.cpp $VORONOIPPSRC/VoronoiEdge.cpp $VORONOIPPSRC/VoronoiSite.cpp"
+ASAN_FLAGS="-fsanitize=address -fno-omit-frame-pointer -fsanitize-address-use-after-scope "
+CFLAGS="$CFLAGS $ASAN_FLAGS -std=c99 -g -O1 -m64 -Wall -Weverything -Wno-float-equal -Wno-unused-function -Wno-double-promotion -pedantic -I../src"
+LINKFLAGS="-lm -fsanitize=address"
+DOUBLEDEFINES="-Wno-double-promotion -DTEST_USE_DOUBLE -DJCV_REAL_TYPE=double -DJCV_ATAN2=atan2 -DJCV_SQRT=sqrt"
 
-# BOOSTINC=boost/polygon/include
-
-# clang++ -o ../build/perftest -g -O3 -m64 -std=c++11 -I.. perftest.cpp fastjet/voronoi.cpp shaneosullivan/VoronoiDiagramGenerator.cpp -I$VORONOIPPINC -DVORONOI_STATIC $VORONOIPP -I$BOOSTINC
-
-clang -o ../build/test -std=c99 -g -O0 -m64 -Wall -Weverything -Wno-float-equal -Wno-double-promotion -pedantic -I../src -lm test.c
+clang -o ../build/test $CFLAGS $LINKFLAGS test.c
+clang -o ../build/test_double $CFLAGS $LINKFLAGS $DOUBLEDEFINES test.c
