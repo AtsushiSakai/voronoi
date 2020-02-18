@@ -465,7 +465,7 @@ int main(int argc, const char** argv)
 	{
 		jcv_diagram diagram;
 		memset(&diagram, 0, sizeof(jcv_diagram));
-		jcv_diagram_generate(count, (const jcv_point*)points, rect, &diagram);
+		jcv_diagram_generate(count, (const jcv_point*)points, 0, &diagram);
 
 		relax_points(&diagram, points);
 
